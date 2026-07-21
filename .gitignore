@@ -1,0 +1,20 @@
+## Data
+data/raw/
+data/processed/
+*.csv
+!requirements.txt
+
+## Notebooks
+.ipynb_checkpoints/
+
+## Python
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+
+## CatBoost training artifacts
+catboost_info/
+
+## OS
+.DS_Store
