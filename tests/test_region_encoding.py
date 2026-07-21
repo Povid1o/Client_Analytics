@@ -45,7 +45,7 @@ def test_min_count_fallback_used_for_small_regions():
 def test_oof_encoding_does_not_use_row_own_target():
     """Leakage test: perturbing one row's target must not change its own OOF encoding."""
     df, target, weights = _make_synthetic_df(n_per_region=50, n_regions=4, seed=1)
-    folds = get_folds(len(df), n_folds=5, seed=42)
+    folds = get_folds(target, n_folds=5, seed=42)
 
     oof_original = oof_region_encoding(df, target, weights, folds, min_count=20)
 
