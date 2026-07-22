@@ -1,6 +1,7 @@
 import numpy as np
 
 from src.ordinal_routing import (
+    adaptive_temperature_scale,
     cumulative_to_class_probabilities,
     income_band,
     normalize_probabilities,
@@ -23,6 +24,16 @@ def test_temperature_scale_preserves_rows_and_sharpens():
     np.testing.assert_allclose(sharpened.sum(axis=1), 1.0)
     assert sharpened[0, 0] > probabilities[0, 0]
     assert sharpened[1, 2] > probabilities[1, 2]
+
+
+def test_adaptive_temperature_only_changes_overridden_top_classes():
+    probabilities = np.asarray([[0.6, 0.3, 0.1], [0.2, 0.2, 0.6]])
+    baseline = temperature_scale(probabilities, 0.5)
+    adaptive = adaptive_temperature_scale(probabilities, 0.5, {0: 0.3})
+
+    assert adaptive[0, 0] > baseline[0, 0]
+    np.testing.assert_allclose(adaptive[1], baseline[1])
+    np.testing.assert_allclose(adaptive.sum(axis=1), 1.0)
 
 
 def test_projection_and_routing():

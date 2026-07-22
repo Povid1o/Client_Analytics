@@ -149,6 +149,19 @@ def add_trends(frame):
     return result
 
 
+def add_activity_recency(frame):
+    """Express last account activity as a duration relative to the row date."""
+    result = frame.copy()
+    if "dt" not in result or "period_last_act_ad" not in result:
+        return result
+    current = pd.to_datetime(result["dt"], errors="coerce")
+    last_activity = pd.to_datetime(result["period_last_act_ad"], errors="coerce")
+    days = (current - last_activity).dt.days.astype(float)
+    result["fe_days_since_last_activity"] = days.clip(lower=0.0, upper=365.0)
+    result["fe_missing_last_activity"] = last_activity.isna().astype("int8")
+    return result
+
+
 def add_regional_normalization(frame):
     result = frame if "fe_income_anchor_median" in frame else add_anchor_agreement(frame)
     for benchmark in _existing(result, REGIONAL_BENCHMARKS):
@@ -214,6 +227,7 @@ GROUP_BUILDERS = {
     "scale": add_scale_normalization,
     "flows": add_flow_balance,
     "trends": add_trends,
+    "recency": add_activity_recency,
     "regional_norm": add_regional_normalization,
     "expense_shares": add_expense_shares,
     "log_rank": add_log_rank,

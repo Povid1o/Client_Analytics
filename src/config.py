@@ -23,7 +23,7 @@ WEIGHT_COL = "w"
 DATE_COL = "dt"
 
 # The 8 genuinely categorical (text) columns, confirmed programmatically in
-# 01_eda.ipynb via the numeric-string regex heuristic (see preprocessing.py).
+# notebooks/EDA.ipynb via the numeric-string regex heuristic.
 CATEGORICAL_COLS = [
     "dt",
     "gender",

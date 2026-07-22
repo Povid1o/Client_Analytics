@@ -42,6 +42,18 @@ def temperature_scale(probabilities, temperature):
     return normalize_probabilities(np.exp(logits))
 
 
+def adaptive_temperature_scale(probabilities, default_temperature, overrides):
+    """Apply class-specific temperatures based on the unscaled top class."""
+    probabilities = normalize_probabilities(probabilities)
+    result = temperature_scale(probabilities, default_temperature)
+    top_class = probabilities.argmax(axis=1)
+    for band, temperature in overrides.items():
+        selected = top_class == int(band)
+        if np.any(selected):
+            result[selected] = temperature_scale(probabilities[selected], temperature)
+    return result
+
+
 def cumulative_to_class_probabilities(probability_at_least):
     """Convert P(class >= k), k=1..K-1, into a monotone K-class posterior."""
     probability_at_least = np.asarray(probability_at_least, dtype=float)

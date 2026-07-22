@@ -7,8 +7,8 @@ Stratified by target decile bins rather than plain shuffling: a plain
 top-decile clients in one fold, which is exactly the tail WMAE is most
 sensitive to. Stratifying on `pd.qcut(target, 10)` keeps the target
 distribution - and therefore the tail - balanced across folds, which is why
-fold-to-fold variance drops noticeably after this change (see
-`02_baseline_pipeline.ipynb`, section 4).
+fold-to-fold variance drops noticeably after this change. The validation
+protocol is documented in `notebooks/EDA.ipynb`.
 """
 import numpy as np
 import pandas as pd

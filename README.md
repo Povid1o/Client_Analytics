@@ -1,22 +1,31 @@
-# Client_Analytics — прогнозирование дохода клиента (WMAE)
+# Client Analytics — прогнозирование дохода по WMAE
 
-Регрессия дохода клиента (`target`), метрика — **WMAE** (Weighted Mean
-Absolute Error). Используются только предоставленные `train.csv`/`test.csv` —
-никаких внешних данных (запрещено регламентом конкурса).
+В проекте зафиксированы ровно две production-системы: абсолютный лидер и
+компактный лидер. Исследовательские выводы, включая feature ablation,
+confusion matrix, bias по группам и анализ публичного решения, собраны в одном
+ноутбуке [`notebooks/EDA.ipynb`](notebooks/EDA.ipynb).
+
+## Результаты
+
+| Система | Моделей | Random WMAE | Temporal WMAE | Назначение |
+|---|---:|---:|---:|---|
+| Full champion | 26 | **59 291** | **57 740** | максимальный validated score |
+| Compact champion | 16 | 59 501 | 57 827 | проще развивать и обслуживать |
+
+Random — strict outer validation. Temporal — зафиксированный holdout:
+январь–май обучают модель, июнь проверяет перенос во времени.
 
 ## Структура
 
-```
-data/raw/            # сюда положить train.csv, test.csv (см. ниже)
-data/processed/      # кэш очищенных данных (не используется в baseline, зарезервировано)
-notebooks/
-  00_eda_experiment_log.ipynb # хронологический лог EDA-гипотез (см. EDA_experiment_log.md)
-  01_eda.ipynb              # EDA: dtype-аудит, target, пропуски, регион, train/test shift
-  02_baseline_pipeline.ipynb # препроцессинг, региональный OOF-признак, CatBoost, сабмит
-src/                 # переиспользуемый код, импортируется из ноутбуков
-tests/                # unit-тесты для src/metrics.py и src/region_encoding.py
-outputs/              # только итоговые submission полных production-систем
-  partial/            # validation/test-предикты, компоненты, аудиты и графики
+```text
+train_full_champion.py       # полный 26-model ансамбль
+train_compact_champion.py    # компактный 16-model ансамбль
+src/                         # общие production-компоненты
+notebooks/EDA.ipynb          # весь EDA и журнал исследований
+data/raw/                    # train.csv и test.csv
+outputs/                     # только два production submission
+outputs/partial/             # компоненты, OOF, аудиты и старые эксперименты
+tests/                       # тесты переиспользуемых компонентов
 ```
 
 ## Установка
@@ -27,147 +36,83 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## Данные
+Файлы `data/raw/train.csv` и `data/raw/test.csv` читаются с параметрами
+`sep=";", decimal=","`. Train содержит `target` и `w`; test — только входные
+признаки и `id`.
 
-Положите `train.csv` и `test.csv` в `data/raw/` (эти файлы в `.gitignore`,
-в репозиторий не попадают). Файлы читаются как
-`pd.read_csv(path, sep=';', decimal=',')`.
+## Запуск
 
-- `train.csv`: 222 входных признака + `id`, `target`, `w` (вес наблюдения,
-  используется как `sample_weight` при обучении и при расчёте локального
-  CV WMAE — организаторы, по условиям задачи, применяют свой вес на
-  приватном тесте).
-- `test.csv`: те же 222 входных признака + `id`, без `target`/`w`.
-
-`sample_submission.csv` в материалах конкурса обнаружен не был. Формат
-сабмита выбран как допущение: **`id;predict`** (два столбца, разделитель
-`;`, запятая как десятичный разделитель — тот же формат, что и во входных
-`train.csv`/`test.csv`) — **это нужно подтвердить у организаторов** перед
-финальной отправкой.
-
-## Порядок запуска
-
-1. `notebooks/00_eda_experiment_log.ipynb` — Restart & Run All. Хронологическое
-   воспроизведение всех EDA-гипотез и проверок в том порядке, в котором они
-   изначально прогонялись (см. `EDA_experiment_log.md`) — каждый найденный
-   результат печатается рядом с референсным значением из лога для
-   трассируемости. Не заменяет `01_eda.ipynb`, а дополняет его как
-   хронологический слой.
-2. `notebooks/01_eda.ipynb` — Restart & Run All. Финальный тематический EDA,
-   сохраняет `outputs/partial/feature_stats.csv` и графики в
-   `outputs/partial/figures/`.
-3. `notebooks/02_baseline_pipeline.ipynb` — Restart & Run All. Строит
-   региональный OOF-признак, обучает CatBoost, выводит CV WMAE и sanity
-   floor, сохраняет `outputs/submission_baseline.csv` и
-   `outputs/partial/feature_importance.csv`.
-
-Все три ноутбука воспроизводимы (seed=42 везде, см. `src/config.py`) и
-рассчитаны на выполнение целиком без ручных правок.
-
-## Валидация
-
-CV использует `StratifiedKFold` (`src/validation.py`), стратифицированный по
-децилям target (`pd.qcut(target, 10)`), а не обычный случайный `KFold`: без
-стратификации редкие дорогие клиенты верхнего дециля (у которых `w` почти на
-порядок выше среднего — см. ноутбук 00, D1) могут по случайности
-сконцентрироваться в одном фолде, что раздувает fold-to-fold разброс WMAE и
-не отражает реальную неопределённость модели. Те же стратифицированные
-фолды используются и для регионального OOF-энкодинга (`src/region_encoding.py`),
-чтобы модель и признак оценивались консистентно.
-
-Дополнительно к per-fold WMAE (`mean ± std` по 5 фолдам) считается **pooled
-OOF WMAE** с bootstrap 95% CI (`src/metrics.py::bootstrap_wmae_ci`, 2000
-ресемплов на всём пуле OOF-предсказаний). Наивный `std` по 5 fold-level
-числам — оценка на выборке размера 5, она может заметно завышать
-неопределённость; bootstrap CI использует весь объём train. Количественное
-сравнение (наивный `KFold` → `StratifiedKFold` → bootstrap) приведено в
-`02_baseline_pipeline.ipynb`, раздел 5.
-
-## Тесты
+Полный чемпион:
 
 ```bash
-pytest tests/ -v
+python3 train_full_champion.py
 ```
 
-Покрывают `src/metrics.py::wmae`/`weighted_median` (ручные примеры) и
-leakage-safety `src/region_encoding.py` (OOF-энкодинг не использует
-собственный target/w строки).
+Результаты:
 
-## Где искать результаты
+- `outputs/submission_full_champion.csv`;
+- `outputs/partial/submission_full_champion_components.csv`.
 
-- `outputs/submission_baseline.csv` — финальный сабмит.
-- `outputs/partial/feature_importance.csv` — топ-20 признаков финальной модели.
-- `outputs/partial/feature_stats.csv` — сводка по всем признакам (dtype, семейство,
-  доля пропусков train/test, |Spearman ρ| с target).
-- `outputs/partial/figures/` — графики из EDA.
-
-## Ограничения этой итерации (см. ТЗ, раздел 6)
-
-Никаких ансамблей/стекинга, сложного FE сверх регионального признака,
-агрессивного тюнинга гиперпараметров или внешних данных. Это baseline и
-точка отсчёта для дальнейших итераций.
-
-## Улучшенная модель
-
-В `train_improved.py` добавлена вторая, независимая от baseline итерация:
-
-- ансамбль двух weighted-RMSE CatBoost на `target ** 0.25` и `sqrt(target)`;
-- смешивание прогноза с `salary_6to12m_avg` только там, где этот признак
-  доступен (никакие target-derived признаки на test не используются);
-- ограничение прогноза известным диапазоном target;
-- региональный target encoding исключён: прежний OOF-признак безопасен для
-  отдельной строки, но при внешнем CV часть его значений обучающей выборки
-  могла зависеть от target в validation-фолде.
-
-Честный 5-fold OOF для лучшей одиночной модели составил **63 698 WMAE**, а
-после зарплатной калибровки — **62 342 WMAE** против **70 999** у baseline
-(улучшение на 12,2%). На временном holdout новый ансамбль также улучшил
-результат: примерно 62,3 тыс. до зарплатной калибровки против 69,2 тыс. у
-baseline.
-
-Быстро обучить финальные модели и создать сабмит:
+Компактный чемпион:
 
 ```bash
-python3 train_improved.py
+python3 train_compact_champion.py
 ```
 
-Повторить полный 5-fold CV перед финальным обучением (заметно дольше):
+Результаты:
+
+- `outputs/submission_compact_champion.csv`;
+- `outputs/partial/submission_compact_champion_components.csv`.
+
+Параметры итераций доступны через `python3 <entry-point> --help`. Значения по
+умолчанию являются validated-конфигурацией; изменение параметров превращает
+запуск в новый эксперимент.
+
+## Архитектура полного чемпиона
+
+1. Base CatBoost на `target ** 0.25` с последующим blend зарплатного anchor.
+2. Три tail classifiers и три tail experts для 150k/300k/500k.
+3. Multi-anchor expert для клиентов с тремя и более источниками дохода.
+4. Семь локальных узлов hierarchical LightGBM router.
+5. Восемь LightGBM band experts и мягкий confidence-gated routing.
+6. Три unweighted log-quantile LightGBM, lognormal-аппроксимация и точная
+   WMAE-optimal weighted median.
+7. Финал: `0.80 × hierarchical_prediction + 0.20 × distribution_prediction`.
+
+Для top-class G0/G4 используется temperature `0.3`, для остальных — `0.5`.
+
+## Архитектура compact champion
+
+Base, tail, source и семь узлов router совпадают с полным backbone. Восемь
+локальных band experts заменены одной band-conditioned LightGBM: строка
+реплицируется для своего и соседних диапазонов, а requested band передаётся
+явным контекстом. Distribution head отсутствует. Итого 16 моделей.
+
+## EDA
 
 ```bash
-python3 train_improved.py --cv
+jupyter notebook notebooks/EDA.ipynb
 ```
 
-Результат сохраняется в `outputs/submission_improved.csv`.
+Ноутбук рассчитан на `Restart & Run All` и включает:
 
-## Tail/diversity итерация
+- схему, dtype-аудит, target, пропуски и train/test drift;
+- точное восстановление функции веса WMAE;
+- anchors, scale ratios, flows, trends, region normalization, expense shares,
+  log/rank, missing flags и recency;
+- random/temporal feature ablation;
+- confusion matrix, bias, MAE и вклад каждой группы;
+- clustering, boundary repair, cost/regret/trust gates и attractor experiments;
+- анализ distribution stacking публичного решения;
+- обоснование двух текущих production-архитектур.
 
-Продолжение экспериментов с tail classifiers, conditional quantiles,
-leaf-space neighbours, source experts и LightGBM diversity описано в
-`ADVANCED_TAIL_EXPERIMENT_REPORT.md`. Выбранный ансамбль улучшил WMAE на
-1 998 на random outer fold и на 1 364 на temporal holdout.
+## Проверки
 
 ```bash
-python3 train_advanced_tail.py
+pytest -q
+python3 train_full_champion.py --help
+python3 train_compact_champion.py --help
 ```
 
-Новый кандидат сохраняется в `outputs/submission_advanced_tail.csv`.
-
-## Hierarchical ordinal router
-
-Надстройка классифицирует клиента локальным бинарным деревом из семи узлов и
-восстанавливает распределение по восьми диапазонам. Затем confidence-gated
-routing мягко смешивает локальных регрессоров-специалистов. Иерархия заменила
-семь прежних cumulative boundaries, не увеличивая число моделей.
-
-Полный ансамбль получил **59 712 WMAE** на random outer fold и **57 772 WMAE**
-на June temporal holdout — на 118 и 251 лучше прежнего production. Полная
-диагностика классификации и сравнение с кластеризацией приведены в
-`HIERARCHICAL_ROUTING_REPORT.md`.
-
-```bash
-python3 train_ordinal_router.py
-```
-
-Submission сохраняется в `outputs/submission_hierarchical_router.csv`, а
-вероятности диапазонов и все коррекции — в
-`outputs/partial/submission_hierarchical_router_components.csv`.
+Submission имеет два столбца `id;predict`, разделитель `;`, десятичный знак
+`,`; перед отправкой формат следует сверить с актуальными правилами конкурса.
