@@ -9,7 +9,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_RAW_DIR = PROJECT_ROOT / "data" / "raw"
 DATA_PROCESSED_DIR = PROJECT_ROOT / "data" / "processed"
 OUTPUTS_DIR = PROJECT_ROOT / "outputs"
-FIGURES_DIR = OUTPUTS_DIR / "figures"
+PARTIAL_OUTPUTS_DIR = OUTPUTS_DIR / "partial"
+FIGURES_DIR = PARTIAL_OUTPUTS_DIR / "figures"
 
 TRAIN_PATH = DATA_RAW_DIR / "train.csv"
 TEST_PATH = DATA_RAW_DIR / "test.csv"

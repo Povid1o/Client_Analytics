@@ -70,3 +70,47 @@ def fit_full_region_encoding(train_df, target, weights, region_col=REGION_COL, m
 def apply_region_encoding(df, stats, global_fallback, region_col=REGION_COL):
     """Apply previously-fit region stats to any dataframe (e.g. test)."""
     return apply_region_stats(df[region_col].to_numpy(), stats, global_fallback)
+
+
+def compute_smoothed_region_stats(regions, target, weights, smoothing=60.0):
+    """Bayesian-shrunk weighted-median target statistic per region.
+
+    The shrinkage formula is ``(n * region_median + smoothing * global) /
+    (n + smoothing)``. Unlike the old hard ``min_count`` cutoff, this keeps
+    small regions while continuously pulling their noisy estimates towards
+    the global weighted median.
+    """
+    frame = pd.DataFrame({"region": regions, "target": target, "w": weights})
+    global_stat = weighted_median(frame["target"].to_numpy(), frame["w"].to_numpy())
+    stats = {}
+    for region, group in frame.groupby("region", dropna=False):
+        region_stat = weighted_median(group["target"].to_numpy(), group["w"].to_numpy())
+        count = len(group)
+        stats[region] = (count * region_stat + smoothing * global_stat) / (count + smoothing)
+    return stats, global_stat
+
+
+def apply_smoothed_region_stats(regions, stats, global_fallback):
+    """Apply smoothed stats, including a stable key for missing regions."""
+    return np.asarray([stats.get(region, global_fallback) for region in regions], dtype=float)
+
+
+def crossfit_smoothed_region_encoding(
+    df,
+    target,
+    weights,
+    folds,
+    region_col=REGION_COL,
+    smoothing=60.0,
+):
+    """Create target-safe OOF smoothed region statistics."""
+    target = np.asarray(target, dtype=float)
+    weights = np.asarray(weights, dtype=float)
+    regions = df[region_col].to_numpy()
+    result = make_oof_array(len(df))
+    for train_idx, val_idx in folds:
+        stats, fallback = compute_smoothed_region_stats(
+            regions[train_idx], target[train_idx], weights[train_idx], smoothing=smoothing
+        )
+        result[val_idx] = apply_smoothed_region_stats(regions[val_idx], stats, fallback)
+    return result

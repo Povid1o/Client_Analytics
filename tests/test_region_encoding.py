@@ -5,6 +5,7 @@ import pytest
 from src.region_encoding import (
     apply_region_stats,
     compute_region_stats,
+    crossfit_smoothed_region_encoding,
     oof_region_encoding,
 )
 from src.validation import get_folds
@@ -79,3 +80,15 @@ def test_apply_region_stats_uses_fallback_for_unseen_region():
     result = apply_region_stats(["region_a", "region_unseen"], stats, fallback)
     assert result[0] == pytest.approx(100.0)
     assert result[1] == pytest.approx(50.0)
+
+
+def test_smoothed_region_encoding_does_not_use_own_target():
+    df, target, weights = _make_synthetic_df(n_per_region=50, n_regions=4, seed=3)
+    folds = get_folds(target, n_folds=5, seed=42)
+    original = crossfit_smoothed_region_encoding(df, target, weights, folds, smoothing=60)
+
+    perturbed = target.copy()
+    perturbed[0] += 1_000_000
+    changed = crossfit_smoothed_region_encoding(df, perturbed, weights, folds, smoothing=60)
+
+    assert original[0] == pytest.approx(changed[0])
